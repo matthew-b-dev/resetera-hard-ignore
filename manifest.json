@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "ResetEra Hard Ignore",
+  "description": "Ignore any user on ResetEra.",
+  "version": "1.0.0",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["*://resetera.com/*", "*://*.resetera.com/*"],
+  "action": {
+    "default_title": "ResetEra Hard Ignore",
+    "default_popup": "extension-menu.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.resetera.com/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_end"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ResetEra Hard Ignore</title>
+    <link rel="stylesheet" href="extension-menu.css" />
+  </head>
+  <body>
+    <div class="menu-shell">
+      <header>
+        <h1>ResetEra Hard Ignore</h1>
+        <p>Hide posts and threads created by ignored users.</p>
+      </header>
+
+      <form id="ignore-form">
+        <input
+          id="username-input"
+          type="text"
+          placeholder="Add username"
+          autocomplete="off"
+        />
+        <button type="submit">Add</button>
+      </form>
+
+      <div id="error-message" role="alert"></div>
+
+      <section>
+        <h2>Ignored users</h2>
+        <ul id="ignored-list"></ul>
+      </section>
+
+      <button id="refresh-button" type="button">Refresh active page</button>
+    </div>
+
+    <script src="extension-menu.js"></script>
+  </body>
+</html>
