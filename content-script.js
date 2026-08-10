@@ -100,7 +100,7 @@ function ensureIgnoredPostStyle() {
     .rh-ignored-post-banner {
       background: rgba(255, 215, 0, 0.08);
       border-left: 4px solid #ffc107;
-      color: #fff;
+      color: inherit;
       font-size: 1.15rem;
       padding: 10px 12px;
       margin-bottom: 10px;
@@ -108,12 +108,22 @@ function ensureIgnoredPostStyle() {
       line-height: 1.4;
     }
     .rh-ignored-post-banner strong {
-      color: #ffd966;
+      color: inherit;
+      font-weight: 600;
+    }
+    .rh-ignored-quote-notice {
+      color: #a9a9a9;
+      background: rgba(0, 0, 0, 0.04);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      font-size: 1.25rem;
+      line-height: 1.4;
     }
     .rh-ignored-action {
       all: unset;
       display: inline-block;
-      color: #8050bf;
+      color: #b193d7;
       cursor: pointer;
       text-decoration: underline;
       font: inherit;
