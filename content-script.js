@@ -8,16 +8,19 @@ const extensionApi =
       : undefined;
 const storage = extensionApi?.storage;
 const isBrowserApi = typeof browser !== 'undefined';
+const storageAvailable = Boolean(storage?.local);
+let currentIgnoredUsers = [];
+let pendingDomReapply = false;
 
-console.log('ResetEra Hard Ignore: content script loaded', {
+console.info('ResetEra Hard Ignore: content script loaded', {
   url: location.href,
   browserApi: typeof browser !== 'undefined',
   chromeApi: typeof chrome !== 'undefined',
-  storageAvailable: !!storage,
+  storageAvailable,
 });
 
-if (!storage) {
-  console.error('ResetEra Hard Ignore: extension storage API is unavailable');
+if (!storageAvailable) {
+  console.warn('ResetEra Hard Ignore: extension storage API is unavailable');
 }
 
 function normalizeName(name) {
@@ -27,6 +30,9 @@ function normalizeName(name) {
 }
 
 function storageGet(keys) {
+  if (!storageAvailable) {
+    return Promise.resolve({});
+  }
   if (isBrowserApi) {
     return storage.local.get(keys);
   }
@@ -34,6 +40,9 @@ function storageGet(keys) {
 }
 
 function storageSet(items) {
+  if (!storageAvailable) {
+    return Promise.resolve();
+  }
   if (isBrowserApi) {
     return storage.local.set(items);
   }
@@ -41,47 +50,55 @@ function storageSet(items) {
 }
 
 function isIgnored(author, ignoredUsers) {
-  if (!author) return false;
-  return ignoredUsers.includes(normalizeName(author));
+  if (!author) {
+    return false;
+  }
+  const normalizedAuthor = normalizeName(author);
+  return ignoredUsers.some(
+    (entry) => normalizeName(entry) === normalizedAuthor,
+  );
+}
+
+function setPostHiddenState(post, visible) {
+  post.style.display = visible ? '' : 'none';
+  post.dataset.rhHidden = visible ? 'revealed' : 'true';
+  post.classList.toggle('rh-ignored-revealed', visible);
 }
 
 function hideThreadEntries(ignoredUsers) {
-  const threadItems = document.querySelectorAll('.structItem[data-author]');
-  threadItems.forEach((item) => {
+  const ignoredNames = new Set(ignoredUsers.map(normalizeName));
+  document.querySelectorAll('.structItem[data-author]').forEach((item) => {
     const author = item.dataset.author;
-    if (isIgnored(author, ignoredUsers)) {
-      console.log('Hiding thread entry for ignored user:', author);
+    if (ignoredNames.has(normalizeName(author))) {
       item.style.display = 'none';
     }
   });
 }
 
 function hideThreadPosts(ignoredUsers) {
-  const posts = document.querySelectorAll(
-    'article.message[data-author], .message[data-author]',
-  );
-  posts.forEach((post) => {
-    const author = post.dataset.author;
-    const hiddenState = post.dataset.rhHidden;
-    if (isIgnored(author, ignoredUsers) && hiddenState !== 'revealed') {
-      post.style.display = 'none';
-      post.dataset.rhHidden = 'true';
-      post.classList.remove('rh-ignored-revealed');
-    }
-  });
+  const ignoredNames = new Set(ignoredUsers.map(normalizeName));
+  document
+    .querySelectorAll('article.message[data-author], .message[data-author]')
+    .forEach((post) => {
+      const author = post.dataset.author;
+      const hiddenState = post.dataset.rhHidden;
+      if (
+        ignoredNames.has(normalizeName(author)) &&
+        hiddenState !== 'revealed'
+      ) {
+        setPostHiddenState(post, false);
+      }
+    });
 }
 
 function hideIgnoredAuthorPosts(author) {
   const normalizedAuthor = normalizeName(author);
-  const posts = document.querySelectorAll('[data-author]');
-  posts.forEach((post) => {
+  document.querySelectorAll('[data-author]').forEach((post) => {
     const postAuthor = normalizeName(post.dataset.author);
     if (postAuthor !== normalizedAuthor) {
       return;
     }
-    post.style.display = 'none';
-    post.dataset.rhHidden = 'true';
-    post.classList.remove('rh-ignored-revealed');
+    setPostHiddenState(post, false);
     const banner = post.querySelector('.rh-ignored-post-banner');
     if (banner) {
       banner.remove();
@@ -193,9 +210,7 @@ function revealIgnoredAuthorPosts(author) {
       return;
     }
     if (hiddenState === 'true' || computedDisplay === 'none') {
-      post.style.display = '';
-      post.dataset.rhHidden = 'revealed';
-      post.classList.add('rh-ignored-revealed');
+      setPostHiddenState(post, true);
       insertIgnoredPostBanner(post);
       revealedAny = true;
     }
@@ -212,11 +227,10 @@ function revealIgnoredAuthorPosts(author) {
 }
 
 function revealIgnoredPosts(ignoredUsers) {
-  const posts = document.querySelectorAll('[data-rh-hidden="true"]');
-  posts.forEach((post) => {
-    if (isIgnored(post.dataset.author, ignoredUsers)) {
-      post.style.display = '';
-      post.dataset.rhHidden = 'revealed';
+  const ignoredNames = new Set(ignoredUsers.map(normalizeName));
+  document.querySelectorAll('[data-rh-hidden="true"]').forEach((post) => {
+    if (ignoredNames.has(normalizeName(post.dataset.author))) {
+      setPostHiddenState(post, true);
       insertIgnoredPostBanner(post);
     }
   });
@@ -324,9 +338,24 @@ function applyHardIgnore(ignoredUsers) {
   processQuoteBlocks(ignoredUsers);
 }
 
-function observeChanges(ignoredUsers) {
-  const observer = new MutationObserver(() => applyHardIgnore(ignoredUsers));
-  observer.observe(document.body, { childList: true, subtree: true });
+function observeChanges() {
+  const body = document.body || document.documentElement;
+  if (!body) {
+    return;
+  }
+
+  const observer = new MutationObserver(() => {
+    if (pendingDomReapply) {
+      return;
+    }
+    pendingDomReapply = true;
+    requestAnimationFrame(() => {
+      pendingDomReapply = false;
+      applyHardIgnore(currentIgnoredUsers);
+    });
+  });
+
+  observer.observe(body, { childList: true, subtree: true });
 }
 
 function getThreadKey() {
@@ -500,10 +529,45 @@ function loadIgnoredUsers() {
   });
 }
 
+function refreshIgnoredUsers() {
+  return loadIgnoredUsers().then((ignoredUsers) => {
+    currentIgnoredUsers = ignoredUsers;
+    applyHardIgnore(ignoredUsers);
+    return revealPersistedAuthors(ignoredUsers, currentThreadKey);
+  });
+}
+
+function bindStorageListener() {
+  if (!storage?.onChanged) {
+    return;
+  }
+
+  storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') {
+      return;
+    }
+
+    if (changes[IGNORED_USERS_KEY] || changes[REVEALED_AUTHORS_KEY]) {
+      refreshIgnoredUsers().catch((error) => {
+        console.warn(
+          'ResetEra Hard Ignore: failed to refresh ignored users',
+          error,
+        );
+      });
+    }
+  });
+}
+
 const currentThreadKey = getThreadKey();
 
-loadIgnoredUsers().then((ignoredUsers) => {
-  applyHardIgnore(ignoredUsers);
-  revealPersistedAuthors(ignoredUsers, currentThreadKey);
-  observeChanges(ignoredUsers);
-});
+refreshIgnoredUsers()
+  .then(() => {
+    observeChanges();
+    bindStorageListener();
+  })
+  .catch((error) => {
+    console.warn(
+      'ResetEra Hard Ignore: failed to initialize content script',
+      error,
+    );
+  });

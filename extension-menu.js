@@ -8,9 +8,10 @@ const extensionApi =
 const storage = extensionApi?.storage;
 const tabsApi = extensionApi?.tabs;
 const isBrowserApi = typeof browser !== 'undefined';
+const storageAvailable = Boolean(storage?.local);
 
-if (!storage) {
-  console.error('ResetEra Hard Ignore: extension storage API is unavailable');
+if (!storageAvailable) {
+  console.warn('ResetEra Hard Ignore: extension storage API is unavailable');
 }
 
 function normalizeUserName(value) {
@@ -18,6 +19,9 @@ function normalizeUserName(value) {
 }
 
 function storageGet(keys) {
+  if (!storageAvailable) {
+    return Promise.resolve({});
+  }
   if (isBrowserApi) {
     return storage.local.get(keys);
   }
@@ -25,6 +29,9 @@ function storageGet(keys) {
 }
 
 function storageSet(items) {
+  if (!storageAvailable) {
+    return Promise.resolve();
+  }
   if (isBrowserApi) {
     return storage.local.set(items);
   }
@@ -36,22 +43,31 @@ function getIgnoredUsers() {
     const rawList = Array.isArray(result[IGNORED_USERS_KEY])
       ? result[IGNORED_USERS_KEY]
       : [];
-    return rawList.map(normalizeUserName).filter(Boolean);
+    return Array.from(new Set(rawList.map(normalizeUserName).filter(Boolean)));
   });
 }
 
 function setIgnoredUsers(list) {
-  return storageSet({ [IGNORED_USERS_KEY]: list });
+  const normalizedList = Array.from(
+    new Set(list.map(normalizeUserName).filter(Boolean)),
+  );
+  return storageSet({ [IGNORED_USERS_KEY]: normalizedList });
 }
 
 function updateError(message) {
   const errorElement = document.getElementById('error-message');
-  errorElement.textContent = message || '';
+  if (errorElement) {
+    errorElement.textContent = message || '';
+  }
 }
 
 async function renderIgnoredList() {
-  const ignoredList = await getIgnoredUsers();
   const container = document.getElementById('ignored-list');
+  if (!container) {
+    return;
+  }
+
+  const ignoredList = await getIgnoredUsers();
   container.innerHTML = '';
 
   if (!ignoredList.length) {
@@ -75,7 +91,7 @@ async function renderIgnoredList() {
         (entry) => entry.toLowerCase() !== user.toLowerCase(),
       );
       await setIgnoredUsers(nextList);
-      renderIgnoredList();
+      await renderIgnoredList();
       updateError('');
     });
 
@@ -88,6 +104,10 @@ async function renderIgnoredList() {
 async function handleAddUser(event) {
   event.preventDefault();
   const input = document.getElementById('username-input');
+  if (!input) {
+    return;
+  }
+
   const username = normalizeUserName(input.value);
   input.value = username;
   if (!username) {
@@ -107,47 +127,49 @@ async function handleAddUser(event) {
   ignoredUsers.push(username);
   await setIgnoredUsers(ignoredUsers);
   input.value = '';
-  updateError('Added ' + username + '. Refresh the page to apply.');
-  renderIgnoredList();
+  updateError(`Added ${username}. Refresh the page to apply.`);
+  await renderIgnoredList();
 }
 
-function refreshActiveTab() {
-  if (!tabsApi) {
+async function refreshActiveTab() {
+  if (!tabsApi?.query || !tabsApi?.reload) {
     return;
   }
 
-  if (typeof tabsApi.query === 'function') {
-    const queryArgs = { active: true, currentWindow: true };
-    const callback = (tabs) => {
-      if (tabs?.length) {
-        const tab = tabs[0];
-        if (typeof tabsApi.reload === 'function') {
-          tabsApi.reload(tab.id);
-        }
-      }
-    };
-
-    const result = tabsApi.query(queryArgs, callback);
-    if (result && typeof result.then === 'function') {
-      result.then((tabs) => {
-        if (tabs?.length && typeof tabsApi.reload === 'function') {
-          tabsApi.reload(tabs[0].id);
-        }
-      });
+  try {
+    const tabs = await tabsApi.query({ active: true, currentWindow: true });
+    const tab = tabs?.[0];
+    if (tab?.id != null) {
+      await tabsApi.reload(tab.id);
     }
+  } catch (error) {
+    console.warn(
+      'ResetEra Hard Ignore: failed to refresh the active tab',
+      error,
+    );
+    updateError('Could not refresh the active tab.');
   }
 }
 
 function setupEventListeners() {
-  document
-    .getElementById('ignore-form')
-    .addEventListener('submit', handleAddUser);
-  document
-    .getElementById('refresh-button')
-    .addEventListener('click', refreshActiveTab);
+  const form = document.getElementById('ignore-form');
+  const refreshButton = document.getElementById('refresh-button');
+
+  if (form) {
+    form.addEventListener('submit', handleAddUser);
+  }
+  if (refreshButton) {
+    refreshButton.addEventListener('click', () => {
+      refreshActiveTab().catch((error) => {
+        console.warn('ResetEra Hard Ignore: refresh handler failed', error);
+      });
+    });
+  }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
-  renderIgnoredList();
+  renderIgnoredList().catch((error) => {
+    console.warn('ResetEra Hard Ignore: failed to render ignored list', error);
+  });
 });
