@@ -35,7 +35,7 @@ Posts and threads from ignored users are hidden entirely. The only way you might
 
 <img width="805" height="257" alt="image" src="https://github.com/user-attachments/assets/fe42045f-5cdf-4704-a0c5-adcba2d47e6b" />
 
-Choosing "Show ignored content" would show the hidden post, appearing like this:
+Choosing "Show ignored content" would show the user's post content in the block-quote. Additionally, once you choose to show the content, the ignored user's post would appear elsewhere in the thread like this:
 
 <img width="801" height="206" alt="image" src="https://github.com/user-attachments/assets/c0e90577-7039-4182-b45c-371342b26a05" />
 
